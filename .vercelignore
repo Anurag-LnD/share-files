@@ -1,0 +1,5 @@
+# Exclude development and editor files
+.git
+node_modules
+*.log
+.DS_Store

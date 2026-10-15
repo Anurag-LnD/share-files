@@ -59,6 +59,39 @@ interface UseP2PRoomReturn {
 const APP_ID = 'p2p-fast-drop-v1';
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB strict limit
 
+// High-reliability Nostr relays for signaling
+const NOSTR_RELAYS = [
+  'wss://relay.damus.io',
+  'wss://nos.lol',
+  'wss://relay.snort.social',
+  'wss://0x-nostr-relay.fly.dev',
+  'wss://nostr.chaima.info',
+  'wss://relay.primal.net',
+];
+
+// High-reliability STUN & public TURN servers for cross-network / mobile cellular NAT traversal
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:openrelay.metered.ca:80' },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const ADJECTIVES = [
@@ -154,7 +187,32 @@ export function useP2PRoom(
       // Dynamic import prevents SSR bundling issues
       const { joinRoom } = await import('trystero/nostr');
 
-      const room = joinRoom({ appId: APP_ID }, roomId);
+      // Join room with high-reliability Nostr relays + STUN/TURN servers for mobile cellular NAT traversal
+      const room = joinRoom(
+        {
+          appId: APP_ID,
+          relayConfig: {
+            urls: NOSTR_RELAYS,
+            redundancy: 5,
+          },
+          rtcConfig: {
+            iceServers: ICE_SERVERS,
+          },
+          turnConfig: [
+            {
+              urls: [
+                'turn:openrelay.metered.ca:80',
+                'turn:openrelay.metered.ca:443',
+                'turn:openrelay.metered.ca:443?transport=tcp',
+              ],
+              username: 'openrelayproject',
+              credential: 'openrelayproject',
+            },
+          ],
+        },
+        roomId
+      );
+
       roomRef.current = room;
 
       // ── Local identity ──────────────────────────────────────────────────
@@ -179,12 +237,18 @@ export function useP2PRoom(
           nickname: data.nickname || 'Anonymous Peer',
           deviceType: (data.deviceType as 'Mobile' | 'Desktop') ?? 'Desktop',
         };
+
         setPeers((prev) => {
           const exists = prev.find((p) => p.peerId === ctx.peerId);
           return exists
             ? prev.map((p) => (p.peerId === ctx.peerId ? peerMeta : p))
             : [...prev, peerMeta];
         });
+
+        // Reciprocal sync: ensure the newcomer also receives our metadata
+        if (localMetaRef.current && metaActionRef.current) {
+          metaActionRef.current.send(localMetaRef.current, { target: ctx.peerId });
+        }
       };
 
       // ── File transfer action ─────────────────────────────────────────────
@@ -203,6 +267,7 @@ export function useP2PRoom(
         const blob = new Blob([data], { type });
         const url = URL.createObjectURL(blob);
         const received: ReceivedFile = { name, size, type, blob, url };
+
         setReceivedFiles((prev) => [...prev, received]);
         upsertTransfer(ctx.peerId, 'receive', {
           progress: 100,
@@ -229,7 +294,7 @@ export function useP2PRoom(
       // ── Peer presence ────────────────────────────────────────────────────
       room.onPeerJoin = (peerId: string) => {
         if (!isMounted) return;
-        // Announce our identity to the newly joined peer
+        // Announce our identity to the newly connected peer
         if (localMetaRef.current && metaActionRef.current) {
           metaActionRef.current.send(localMetaRef.current, { target: peerId });
         }

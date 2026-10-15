@@ -16,6 +16,9 @@ import {
   ShieldCheck,
   Radio,
   FileUp,
+  Terminal,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -303,7 +306,7 @@ function LandingView({
   }, [defaultNickname]);
 
   const handleJoin = () => {
-    const code = roomInput.trim() || generateRoomCode();
+    const code = roomInput.trim().toLowerCase() || generateRoomCode();
     onJoin(code, nickname);
   };
 
@@ -372,6 +375,10 @@ function LandingView({
             onChange={(e) => setRoomInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
             maxLength={32}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck="false"
+            autoComplete="off"
             autoFocus
           />
           <button
@@ -393,7 +400,7 @@ function LandingView({
         </button>
 
         <p className="text-center text-xs text-slate-500 mt-4">
-          Share the room code with nearby devices to connect
+          Enter the same code on both devices to link them
         </p>
       </div>
 
@@ -429,18 +436,22 @@ function RoomView({
 }) {
   const {
     isJoined,
+    signalingStatus,
+    relayCount,
     localMeta,
     peers,
     transfers,
     receivedFiles,
     sendFile,
     dismissReceivedFile,
+    logs,
   } = useP2PRoom(roomId, nickname);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedPeer, setSelectedPeer] = useState<PeerMeta | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'error' | 'info' } | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
 
   // Responsive arena size
   const [arenaSize, setArenaSize] = useState(360);
@@ -466,7 +477,10 @@ function RoomView({
 
   const handlePeerClick = (peer: PeerMeta) => {
     setSelectedPeer(peer);
-    fileInputRef.current?.click();
+    // Programmatically click the accessible hidden file input
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
   };
 
   const handleCopyCode = () => {
@@ -516,28 +530,43 @@ function RoomView({
   return (
     <div className="flex flex-col items-center justify-between min-h-screen px-4 py-6 max-w-xl mx-auto">
       {/* Top Bar */}
-      <div className="w-full flex items-center justify-between mb-4">
+      <div className="w-full flex items-center justify-between mb-3">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-900/30">
             <Share2 className="w-5 h-5 text-white" />
           </div>
           <div>
             <span className="font-bold text-slate-100 text-sm">FastDrop</span>
+            {/* Live Signaling Status */}
             <div className="flex items-center gap-1.5">
               <span
                 className={cn(
                   'w-1.5 h-1.5 rounded-full',
-                  isJoined ? 'bg-green-400 animate-pulse' : 'bg-slate-600'
+                  signalingStatus === 'connected'
+                    ? 'bg-green-400 animate-pulse'
+                    : signalingStatus === 'connecting'
+                    ? 'bg-yellow-400 animate-pulse'
+                    : 'bg-red-500'
                 )}
               />
-              <span className="text-[10px] text-slate-400">
-                {isJoined ? `${peers.length} peer${peers.length !== 1 ? 's' : ''}` : 'Connecting...'}
+              <span className="text-[10px] text-slate-400 font-mono">
+                {relayCount > 0 ? `${relayCount} relays · ` : ''}
+                {peers.length} peer{peers.length !== 1 ? 's' : ''}
               </span>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Diagnostics toggle */}
+          <button
+            onClick={() => setShowLogs(!showLogs)}
+            className="p-2 rounded-xl bg-[#16161e] border border-white/10 text-slate-400 hover:text-violet-300 transition-colors cursor-pointer"
+            title="Connection Diagnostics"
+          >
+            <Terminal className="w-3.5 h-3.5" />
+          </button>
+
           {/* Room Code Badge with Copy button */}
           <button
             onClick={handleCopyCode}
@@ -562,6 +591,25 @@ function RoomView({
           </button>
         </div>
       </div>
+
+      {/* Diagnostics Drawer (Optional drop-down for mobile/desktop troubleshooting) */}
+      {showLogs && (
+        <div className="w-full bg-[#12121a] border border-violet-500/30 rounded-2xl p-3 mb-3 text-[11px] font-mono text-slate-400 max-h-36 overflow-y-auto glow-card">
+          <div className="flex items-center justify-between mb-1 pb-1 border-b border-white/10">
+            <span className="text-violet-300 font-semibold">Live Diagnostics</span>
+            <span className="text-[10px] text-slate-500">Room: {roomId}</span>
+          </div>
+          {logs.length === 0 ? (
+            <p className="text-slate-600">No events yet...</p>
+          ) : (
+            logs.map((l, i) => (
+              <p key={i} className="truncate">
+                {l}
+              </p>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Radar Center Stage */}
       <div className="relative my-auto flex items-center justify-center" style={{ width: arenaSize, height: arenaSize }}>
@@ -597,7 +645,8 @@ function RoomView({
             </div>
             <p className="text-slate-300 text-sm font-semibold">Scanning for Peers</p>
             <p className="text-slate-500 text-xs max-w-xs leading-relaxed">
-              Open FastDrop on another device or tab and join room <span className="text-violet-300 font-mono font-bold">{roomId}</span>
+              Open FastDrop on your other device and join code{' '}
+              <span className="text-violet-300 font-mono font-bold">{roomId}</span>
             </p>
           </div>
         )}
@@ -656,11 +705,13 @@ function RoomView({
         </p>
       </div>
 
-      {/* Hidden File Picker */}
+      {/* Accessible hidden file input - NOT display:none so iOS Safari & Android allow synthetic click */}
       <input
         ref={fileInputRef}
         type="file"
-        className="hidden"
+        className="absolute opacity-0 pointer-events-none w-0 h-0 overflow-hidden"
+        tabIndex={-1}
+        aria-hidden="true"
         onChange={handleFileChange}
       />
 

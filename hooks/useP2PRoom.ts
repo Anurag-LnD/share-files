@@ -200,9 +200,21 @@ export function useP2PRoom(
         {
           appId: APP_ID,
           relayConfig: {
-            // Let trystero use its built-in curated relay list (29 relays,
-            // shuffled by appId). Overriding urls bypasses maintenance updates.
-            redundancy: 5,
+            // Explicit relay list — trystero's defaults include dead relays
+            // (nos.lol→502, cdn.satellite.earth→unreachable) and the
+            // deterministic shuffle for our appId selects them. These are
+            // high-uptime relays run by major Nostr ecosystem teams.
+            urls: [
+              'wss://relay.damus.io',
+              'wss://relay.primal.net',
+              'wss://relay.nos.social',
+              'wss://nostr.azzamo.net',
+              'wss://relay.nostr.dev.br',
+              'wss://relay.piazza.today',
+              'wss://nostr.stakey.net',
+              'wss://relay.hackshed.dev',
+            ],
+            redundancy: 6,
           },
           rtcConfig: {
             iceServers: ICE_SERVERS,

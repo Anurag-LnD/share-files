@@ -60,23 +60,30 @@ interface UseP2PRoomReturn {
 const APP_ID = 'p2p-fast-drop-v1';
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB strict limit
 
-// Verified active Nostr relays for real-time signaling
-const NOSTR_RELAYS = [
-  'wss://nos.lol',
-  'wss://0x-nostr-relay.fly.dev',
-  'wss://relay.snort.social',
-  'wss://nostr.chaima.info',
-  'wss://nostr.red5d.dev',
-  'wss://nostr.stakey.net',
-];
-
-// High-speed, responsive global STUN servers (verified responsive <20ms)
+// ICE servers for WebRTC NAT traversal
+// STUN discovers public IPs; TURN relays data when direct P2P is blocked by NAT/firewalls.
+// Without TURN, cross-network transfers (e.g. mobile data ↔ laptop WiFi) will fail.
 const ICE_SERVERS: RTCIceServer[] = [
+  // STUN
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
-  { urls: 'stun:global.stun.twilio.com:3478' },
+  { urls: 'stun:stun.relay.metered.ca:80' },
+  // TURN (Metered Open Relay — free tier, 20 GB/month)
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -193,7 +200,8 @@ export function useP2PRoom(
         {
           appId: APP_ID,
           relayConfig: {
-            urls: NOSTR_RELAYS,
+            // Let trystero use its built-in curated relay list (29 relays,
+            // shuffled by appId). Overriding urls bypasses maintenance updates.
             redundancy: 5,
           },
           rtcConfig: {
